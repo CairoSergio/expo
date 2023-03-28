@@ -113,7 +113,14 @@ static NSString *mainObjectPropertyName = @"expo";
       if (error == nil) {
         return expo::convertObjCObjectToJSIValue(runtime, result);
       } else {
-        throw jsi::JSError(runtime, [error.userInfo[@"message"] UTF8String]);
+        NSDictionary<NSString *, id> *userInfo = error.userInfo;
+        jsi::Value exception = expo::createException(runtime,
+                                                     [_mainObject getShared],
+                                                     "code",
+                                                     [userInfo[@"message"] UTF8String],
+                                                     nullptr);
+
+        throw jsi::JSError(runtime, jsi::Value(runtime, exception));
       }
     };
   return [self createHostFunction:name argsCount:argsCount block:hostFunctionBlock];
@@ -158,6 +165,12 @@ static NSString *mainObjectPropertyName = @"expo";
   };
   std::shared_ptr<jsi::Function> klass = expo::createClass(*_runtime, [name UTF8String], jsConstructor);
   return [[EXJavaScriptObject alloc] initWith:klass runtime:self];
+}
+
+- (nullable EXJavaScriptObject *)createObjectWithPrototype:(nonnull EXJavaScriptObject *)prototype
+{
+  std::shared_ptr<jsi::Object> object = expo::newObjectWithPrototype(*_runtime, [prototype getShared]);
+  return object ? [[EXJavaScriptObject alloc] initWith:object runtime:self] : nil;
 }
 
 #pragma mark - Script evaluation

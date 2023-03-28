@@ -26,6 +26,8 @@ using ClassConstructor = std::function<void(jsi::Runtime &runtime, const jsi::Va
 
 std::shared_ptr<jsi::Function> createClass(jsi::Runtime &runtime, const char *name, ClassConstructor constructor);
 
+std::shared_ptr<jsi::Object> newObjectWithPrototype(jsi::Runtime &runtime, std::shared_ptr<jsi::Object> prototype);
+
 #pragma mark - Weak objects
 
 /**
@@ -62,6 +64,8 @@ void setDeallocator(jsi::Runtime &runtime, std::shared_ptr<jsi::Object> object, 
 #pragma mark - Errors
 
 jsi::Value makeCodedError(jsi::Runtime &runtime, NSString *code, NSString *message);
+
+jsi::Value createException(jsi::Runtime &runtime, std::shared_ptr<jsi::Object> expoObject, const char *code, const char *reason, std::shared_ptr<jsi::Object> cause);
 
 } // namespace expo
 

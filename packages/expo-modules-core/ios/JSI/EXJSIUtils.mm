@@ -115,6 +115,23 @@ std::shared_ptr<jsi::Function> createClass(jsi::Runtime &runtime, const char *na
   return std::make_shared<jsi::Function>(klass.asFunction(runtime));
 }
 
+std::shared_ptr<jsi::Object> newObjectWithPrototype(jsi::Runtime &runtime, std::shared_ptr<jsi::Object> prototype) {
+  // Get the "Object" class.
+  jsi::Object objectClass = runtime
+    .global()
+    .getPropertyAsObject(runtime, "Object");
+
+  // Call "Object.create(prototype)" to create an object with the given prototype without calling the constructor.
+  jsi::Object object = objectClass
+    .getPropertyAsFunction(runtime, "create")
+    .callWithThis(runtime, objectClass, {
+      jsi::Value(runtime, prototype)
+    })
+    .asObject(runtime);
+
+  return std::make_shared<jsi::Object>(runtime, object);
+}
+
 #pragma mark - Weak objects
 
 bool isWeakRefSupported(jsi::Runtime &runtime) {
@@ -185,6 +202,20 @@ jsi::Value makeCodedError(jsi::Runtime &runtime, NSString *code, NSString *messa
       jsi::Value(runtime, jsCode),
       jsi::Value(runtime, jsMessage)
     });
+}
+
+jsi::Value createException(jsi::Runtime &runtime, std::shared_ptr<jsi::Object> expoObject, const char *code, const char *reason, std::shared_ptr<jsi::Object> cause) {
+  jsi::Object exception = expoObject
+    ->getPropertyAsObject(runtime, "core")
+    .getPropertyAsFunction(runtime, "NativeException")
+    .callAsConstructor(runtime, {
+      jsi::String::createFromUtf8(runtime, code),
+      jsi::String::createFromUtf8(runtime, reason),
+      cause != nullptr ? jsi::Value(runtime, *cause) : jsi::Value::null()
+    })
+    .asObject(runtime);
+
+  return jsi::Value(runtime, exception);
 }
 
 } // namespace expo
