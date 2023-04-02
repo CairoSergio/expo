@@ -6,6 +6,7 @@ import Foundation
 import SystemConfiguration
 import CommonCrypto
 import Reachability
+import ExpoModulesCore
 
 internal extension Array where Element: Equatable {
   mutating func remove(_ element: Element) {
@@ -76,6 +77,55 @@ public final class UpdatesUtils: NSObject {
       try fileManager.createDirectory(atPath: updatesDirectoryPath, withIntermediateDirectories: true)
     }
     return updatesDirectory
+  }
+
+  public static func checkForUpdate(updatesService: (any EXUpdatesModuleInterface)?, _ block: @escaping ([String: Any]) -> Void) {
+    guard let updatesService = updatesService,
+      let config = updatesService.config,
+      let selectionPolicy = updatesService.selectionPolicy,
+      config.isEnabled
+    else {
+      block(["message": UpdatesDisabledException().localizedDescription])
+      return
+    }
+    guard updatesService.isStarted else {
+      block(["message": UpdatesNotInitializedException().localizedDescription])
+      return
+    }
+
+    var extraHeaders: [String: Any] = [:]
+    updatesService.database.databaseQueue.sync {
+      extraHeaders = FileDownloader.extraHeadersForRemoteUpdateRequest(
+        withDatabase: updatesService.database,
+        config: config,
+        launchedUpdate: updatesService.launchedUpdate,
+        embeddedUpdate: updatesService.embeddedUpdate
+      )
+    }
+
+    let fileDownloader = FileDownloader(config: config)
+    fileDownloader.downloadRemoteUpdate(
+      // swiftlint:disable:next force_unwrapping
+      fromURL: config.updateUrl!,
+      withDatabase: updatesService.database,
+      extraHeaders: extraHeaders
+    ) { updateResponse in
+      guard let update = updateResponse.manifestUpdateResponsePart?.updateManifest else {
+        block([:])
+        return
+      }
+
+      let launchedUpdate = updatesService.launchedUpdate
+      if selectionPolicy.shouldLoadNewUpdate(update, withLaunchedUpdate: launchedUpdate, filters: updateResponse.responseHeaderData?.manifestFilters) {
+        block([
+          "manifest": update.manifest.rawManifestJSON()
+        ])
+      } else {
+        block([:])
+      }
+    } errorBlock: { error in
+      block(["message": error.localizedDescription])
+    }
   }
 
   internal static func sendEvent(toBridge bridge: RCTBridge?, withType eventType: String, body: [AnyHashable: Any]) {

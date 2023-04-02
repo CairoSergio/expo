@@ -85,53 +85,23 @@ public final class UpdatesModule: Module {
     }
 
     AsyncFunction("checkForUpdateAsync") { (promise: Promise) in
-      guard let updatesService = updatesService,
-        let config = updatesService.config,
-        let selectionPolicy = updatesService.selectionPolicy,
-        config.isEnabled else {
-        throw UpdatesDisabledException()
-      }
-      guard updatesService.isStarted else {
-        throw UpdatesNotInitializedException()
-      }
-
-      var extraHeaders: [String: Any] = [:]
-      updatesService.database.databaseQueue.sync {
-        extraHeaders = FileDownloader.extraHeadersForRemoteUpdateRequest(
-          withDatabase: updatesService.database,
-          config: config,
-          launchedUpdate: updatesService.launchedUpdate,
-          embeddedUpdate: updatesService.embeddedUpdate
-        )
-      }
-
-      let fileDownloader = FileDownloader(config: config)
-      fileDownloader.downloadRemoteUpdate(
-        // swiftlint:disable:next force_unwrapping
-        fromURL: config.updateUrl!,
-        withDatabase: updatesService.database,
-        extraHeaders: extraHeaders
-      ) { updateResponse in
-        guard let update = updateResponse.manifestUpdateResponsePart?.updateManifest else {
+      UpdatesUtils.checkForUpdate(updatesService: updatesService) { result in
+        if result["manifest"] != nil {
           promise.resolve([
-            "isAvailable": false
+            "isAvailable": true,
+            "manifest": result["manifest"]
           ])
           return
         }
-
-        let launchedUpdate = updatesService.launchedUpdate
-        if selectionPolicy.shouldLoadNewUpdate(update, withLaunchedUpdate: launchedUpdate, filters: updateResponse.responseHeaderData?.manifestFilters) {
-          promise.resolve([
-            "isAvailable": true,
-            "manifest": update.manifest.rawManifestJSON()
-          ])
-        } else {
-          promise.resolve([
-            "isAvailable": false
-          ])
+        if result["message"] != nil {
+          guard let message = result["message"] as? String else {
+            promise.reject("ERR_UPDATES_CHECK", "")
+            return
+          }
+          promise.reject("ERR_UPDATES_CHECK", message)
+          return
         }
-      } errorBlock: { error in
-        promise.reject("ERR_UPDATES_CHECK", error.localizedDescription)
+        promise.resolve(["isAvailable": false])
       }
     }
 

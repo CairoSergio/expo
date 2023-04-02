@@ -37,9 +37,9 @@ public protocol AppControllerDelegate: AnyObject {
 public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelegate {
   private static let ErrorDomain = "EXUpdatesAppController"
 
-  private static let UpdateAvailableEventName = "updateAvailable"
-  private static let NoUpdateAvailableEventName = "noUpdateAvailable"
-  private static let ErrorEventName = "error"
+  public static let UpdateAvailableEventName = "updateAvailable"
+  public static let NoUpdateAvailableEventName = "noUpdateAvailable"
+  public static let ErrorEventName = "error"
 
   /**
    Delegate which will be notified when EXUpdates has an update ready to launch and
@@ -238,6 +238,7 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     isStarted = true
 
     purgeUpdatesLogsOlderThanOneDay()
+    initializeNotificationHandlers()
 
     do {
       try initializeUpdatesDirectory()
@@ -424,10 +425,26 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     errorRecovery.notify(newRemoteLoadStatus: remoteLoadStatus)
   }
 
+  // MARK: - Notification handler
+  public func handleSendUpdateEvent(notif: Notification) {
+    guard let userInfo = notif.userInfo,
+      let type = userInfo["type"] as? String,
+      let body = userInfo["body"] as? [AnyHashable: Any]
+    else {
+      print("No userInfo found in notification")
+      return
+    }
+    UpdatesUtils.sendEvent(toBridge: bridge, withType: type, body: body)
+  }
+
   // MARK: - Internal
 
   internal func initializeUpdatesDirectory() throws {
     updatesDirectory = try UpdatesUtils.initializeUpdatesDirectory()
+  }
+
+  internal func initializeNotificationHandlers() {
+    NotificationCenter.default.addObserver(self, selector: #selector(handleSendUpdateEvent), name: Notification.Name("Updates.AppController.sendUpdateEvent"), object: nil)
   }
 
   internal func initializeUpdatesDatabase() throws {
