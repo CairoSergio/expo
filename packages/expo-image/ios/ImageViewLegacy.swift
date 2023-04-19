@@ -4,12 +4,10 @@ import SDWebImage
 import ExpoModulesCore
 import VisionKit
 
-typealias SDWebImageContext = [SDWebImageContextOption: Any]
-
-private let imageManager = ImageManager()
+//typealias SDWebImageContext = [SDWebImageContextOption: Any]
 
 // swiftlint:disable:next type_body_length
-public final class ImageView: ExpoView {
+public final class ImageViewLegacy: ExpoView {
   static let contextSourceKey = SDWebImageContextOption(rawValue: "source")
   static let screenScaleKey = SDWebImageContextOption(rawValue: "screenScale")
 
@@ -17,10 +15,10 @@ public final class ImageView: ExpoView {
 
   // Custom image manager doesn't use shared loaders managers by default,
   // so make sure it is provided here.
-//  let imageManager = SDWebImageManager(
-//    cache: SDImageCache.shared,
-//    loader: SDImageLoadersManager.shared
-//  )
+  let imageManager = SDWebImageManager(
+    cache: SDImageCache.shared,
+    loader: SDImageLoadersManager.shared
+  )
 
   var loadingOptions: SDWebImageOptions = [
     .retryFailed, // Don't blacklist URLs that failed downloading
@@ -28,8 +26,6 @@ public final class ImageView: ExpoView {
   ]
 
   var sources: [ImageSource]?
-
-  var pendingReloadTask: Task<Void, Error>?
 
   var pendingOperation: SDWebImageCombinedOperation?
 
@@ -104,8 +100,6 @@ public final class ImageView: ExpoView {
   // MARK: - Implementation
 
   func reload() {
-    log.trace("reload \(loadingOptions.contains(.highPriority) ? "second" : "first")")
-
     if isViewEmpty {
       displayPlaceholderIfNecessary()
     }
@@ -116,51 +110,50 @@ public final class ImageView: ExpoView {
     if sdImageView.image == nil {
       sdImageView.contentMode = contentFit.toContentMode()
     }
+    var context = SDWebImageContext()
 
-    // Cancel previous reload. It may prevent processing the image that is
-    // already going to be outdated and overriden by the new image load.
+    // Cancel currently running load requests.
     cancelPendingOperation()
 
-    pendingReloadTask = Task {
-      onLoadStart([:])
-
-      let options = ImageLoadOptions(
-        cachePolicy: cachePolicy,
-        screenScale: screenScale
-      )
-      let result = await imageManager.loadImage(source: source, options: options)
-
-      guard let image = result.image, !Task.isCancelled else {
-        return
-      }
-      onLoad([
-        "cacheType": result.cacheType.rawValue,
-        "source": [
-          "url": source.uri?.absoluteString,
-          "width": image.size.width,
-          "height": image.size.height,
-          "mediaType": imageFormatToMediaType(image.sd_imageFormat)
-        ]
-      ])
-
-      let scale = window?.screen.scale ?? UIScreen.main.scale
-      let idealSize = idealSize(
-        contentPixelSize: image.size * image.scale,
-        containerSize: frame.size,
-        scale: scale,
-        contentFit: contentFit
-      ).rounded(.up)
-
-      let processedImage = await processImage(image, idealSize: idealSize, scale: scale)
-
-      // Stop execution if canceled
-//      if Task.isCancelled, !isViewEmpty {
-//        return
-//      }
-
-      applyContentPosition(contentSize: idealSize, containerSize: frame.size)
-      renderImage(processedImage)
+    // Modify URL request to add headers.
+    if let headers = source.headers {
+      context[SDWebImageContextOption.downloadRequestModifier] = SDWebImageDownloaderRequestModifier(headers: headers)
     }
+
+    context[.cacheKeyFilter] = createCacheKeyFilter(source.cacheKey)
+    context[.imageTransformer] = createTransformPipeline()
+
+    // Assets from the bundler have `scale` prop which needs to be passed to the context,
+    // otherwise they would be saved in cache with scale = 1.0 which may result in
+    // incorrectly rendered images for resize modes that don't scale (`center` and `repeat`).
+    context[.imageScaleFactor] = source.scale
+
+    if source.isCachingAllowed {
+      let sdCacheType = cachePolicy.toSdCacheType().rawValue
+      context[.originalQueryCacheType] = sdCacheType
+      context[.originalStoreCacheType] = sdCacheType
+    } else {
+      context[.originalQueryCacheType] = SDImageCacheType.none.rawValue
+      context[.originalStoreCacheType] = SDImageCacheType.none.rawValue
+    }
+    // Set which cache can be used to query and store the downloaded image.
+    // We want to store only original images (without transformations).
+    context[.queryCacheType] = SDImageCacheType.none.rawValue
+    context[.storeCacheType] = SDImageCacheType.none.rawValue
+
+    // Some loaders (e.g. blurhash) need access to the source and the screen scale.
+    context[ImageView.contextSourceKey] = source
+    context[ImageView.screenScaleKey] = screenScale
+
+    onLoadStart([:])
+
+    pendingOperation = imageManager.loadImage(
+      with: source.uri,
+      options: loadingOptions,
+      context: context,
+      progress: imageLoadProgress(_:_:_:),
+      completed: imageLoadCompleted(_:_:_:_:_:_:)
+    )
   }
 
   // MARK: - Loading
@@ -219,14 +212,10 @@ public final class ImageView: ExpoView {
       ).rounded(.up)
 
       Task {
-        let processedImage = await processImage(image, idealSize: idealSize, scale: scale)
+        let image = await processImage(image, idealSize: idealSize, scale: scale)
 
         applyContentPosition(contentSize: idealSize, containerSize: frame.size)
-        renderImage(processedImage)
-
-//        if cacheType != SDImageCacheType.disk {
-//          await diskCache.store(key: imageUrl!.absoluteString, data: image.sd_imageData()!)
-//        }
+        renderImage(image)
       }
     } else {
       displayPlaceholderIfNecessary()
@@ -275,42 +264,30 @@ public final class ImageView: ExpoView {
     guard let placeholder = bestPlaceholder, isViewEmpty || !hasAnySource else {
       return
     }
+    var context = SDWebImageContext()
     let isPlaceholderHash = placeholder.isBlurhash || placeholder.isThumbhash
 
-    Task {
-      let options = ImageLoadOptions(cachePolicy: .none, screenScale: screenScale)
-      let result = await imageManager.loadImage(source: placeholder, options: options)
+    context[.imageScaleFactor] = placeholder.scale
+    context[.cacheKeyFilter] = createCacheKeyFilter(placeholder.cacheKey)
 
-      guard let placeholder = result.image else {
+    // Cache placeholders on the disk. Should we let the user choose whether
+    // to cache them or apply the same policy as with the proper image?
+    // Basically they are also cached in memory as the `placeholderImage` property,
+    // so just `disk` policy sounds like a good idea.
+    context[.queryCacheType] = SDImageCacheType.disk.rawValue
+    context[.storeCacheType] = SDImageCacheType.disk.rawValue
+
+    // Some loaders (e.g. blurhash) need access to the source.
+    context[ImageView.contextSourceKey] = placeholder
+
+    imageManager.loadImage(with: placeholder.uri, context: context, progress: nil) { [weak self] placeholder, _, _, _, finished, _ in
+      guard let self = self, let placeholder = placeholder, finished else {
         return
       }
-      placeholderImage = placeholder
-      placeholderContentFit = isPlaceholderHash ? contentFit : placeholderContentFit
-      displayPlaceholderIfNecessary()
+      self.placeholderImage = placeholder
+      self.placeholderContentFit = isPlaceholderHash ? self.contentFit : self.placeholderContentFit
+      self.displayPlaceholderIfNecessary()
     }
-//    var context = SDWebImageContext()
-//
-//    context[.imageScaleFactor] = placeholder.scale
-//    context[.cacheKeyFilter] = createCacheKeyFilter(placeholder.cacheKey)
-//
-//    // Cache placeholders on the disk. Should we let the user choose whether
-//    // to cache them or apply the same policy as with the proper image?
-//    // Basically they are also cached in memory as the `placeholderImage` property,
-//    // so just `disk` policy sounds like a good idea.
-//    context[.queryCacheType] = SDImageCacheType.disk.rawValue
-//    context[.storeCacheType] = SDImageCacheType.disk.rawValue
-//
-//    // Some loaders (e.g. blurhash) need access to the source.
-//    context[ImageView.contextSourceKey] = placeholder
-
-//    imageManager.loadImage(with: placeholder.uri, context: context, progress: nil) { [weak self] placeholder, _, _, _, finished, _ in
-//      guard let self = self, let placeholder = placeholder, finished else {
-//        return
-//      }
-//      self.placeholderImage = placeholder
-//      self.placeholderContentFit = isPlaceholderHash ? self.contentFit : self.placeholderContentFit
-//      self.displayPlaceholderIfNecessary()
-//    }
   }
 
   /**
@@ -373,8 +350,6 @@ public final class ImageView: ExpoView {
     sdImageView.contentMode = contentFit.toContentMode()
     sdImageView.image = image
 
-    log.warn("set \(loadingOptions.contains(.highPriority) ? "second" : "first") image:", image != nil)
-
     if enableLiveTextInteraction {
       analyzeImage()
     }
@@ -385,8 +360,6 @@ public final class ImageView: ExpoView {
   func cancelPendingOperation() {
     pendingOperation?.cancel()
     pendingOperation = nil
-    pendingReloadTask?.cancel()
-    pendingReloadTask = nil
   }
 
   /**
