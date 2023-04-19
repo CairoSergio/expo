@@ -98,7 +98,7 @@ jobs:
       REACT_NATIVE_OVERRIDE_VERSION: 9999.9999.9999
     strategy:
       matrix:
-        api-level: [31]
+        api-level: [33]
     steps:
       - name: 👀 Checkout
         uses: actions/checkout@v3
@@ -121,9 +121,8 @@ jobs:
         uses: ./.github/actions/expo-caches
         id: expo-caches
         with:
+          gradle: 'true'
           yarn-tools: 'true'
-          avd: 'true'
-          avd-api: ${{ matrix.api-level }}
       - name: ⚙️ Setup react-native nightly
         run: et setup-react-native-nightly
       - name: ⚛️ Display React Native config
@@ -137,12 +136,10 @@ jobs:
         env:
           GRADLE_OPTS: '-Dorg.gradle.internal.http.connectionTimeout=180000 -Dorg.gradle.internal.http.socketTimeout=180000 -Dorg.gradle.internal.network.retry.max.attempts=18 -Dorg.gradle.internal.network.retry.initial.backOff=2000'
       - name: 🤖 Run Android tests
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: ./.github/actions/use-android-emulator
         with:
-          api-level: ${{ matrix.api-level }}
+          avd-api: ${{ matrix.api-level }}
           avd-name: avd-${{ matrix.api-level }}
-          arch: x86_64
-          force-avd-creation: false
           script: |
             mkdir artifacts
             adb logcat -d > artifacts/emulator.log
