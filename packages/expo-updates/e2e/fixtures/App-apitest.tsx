@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 export default function App() {
   const [updateMessage, setUpdateMessage] = React.useState('');
+  const [updateEvents, setUpdateEvents] = React.useState<string[]>([]);
   const [updateAvailable, setUpdateAvailable] = React.useState(false);
 
   // Displays a message showing whether or not the app is running
@@ -17,6 +18,14 @@ export default function App() {
     : 'This app is running an update';
 
   const checkAutomaticallyMessage = `Automatic check setting = ${Updates.checkAutomatically}`;
+
+  const pushEventType = (eventType: Updates.UpdateEventType) => {
+    setUpdateEvents((updateEvents) => {
+      const events = [...updateEvents];
+      events.unshift(eventType);
+      return events.slice(0, 5);
+    });
+  };
 
   /**
    * Async function to manually check for an available update from EAS.
@@ -60,6 +69,7 @@ export default function App() {
    * @param {} event The event to handle
    */
   const eventListener = (event: Updates.UpdateEvent) => {
+    pushEventType(event.type);
     if (event.type === Updates.UpdateEventType.ERROR) {
       setUpdateMessage(`Error: ${event.message}`);
     } else if (event.type === Updates.UpdateEventType.NO_UPDATE_AVAILABLE) {
@@ -93,6 +103,7 @@ export default function App() {
       <Text>{runTypeMessage}</Text>
       <Text>{checkAutomaticallyMessage}</Text>
       <Text style={styles.updateMessageText}>{updateMessage}</Text>
+      <Text style={styles.updateMessageText}>{updateEvents.join('\n')}</Text>
       <Pressable style={styles.button} onPress={handleCheckButtonPress}>
         <Text style={styles.buttonText}>Check manually for updates</Text>
       </Pressable>
@@ -128,7 +139,7 @@ const styles = StyleSheet.create({
   },
   updateMessageText: {
     margin: 10,
-    height: 200,
+    height: 150,
     paddingVertical: 12,
     paddingHorizontal: 32,
     width: '90%',
