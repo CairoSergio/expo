@@ -40,6 +40,8 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
   public static let UpdateAvailableEventName = "updateAvailable"
   public static let NoUpdateAvailableEventName = "noUpdateAvailable"
   public static let ErrorEventName = "error"
+  public static let DownloadStartEventName = "downloadStart"
+  public static let DownloadCompleteEventName = "downloadComplete"
 
   /**
    Delegate which will be notified when EXUpdates has an update ready to launch and
@@ -329,6 +331,19 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     return launcher?.launchedUpdate
   }
 
+  private func initializeNotificationHandlers() {
+    // Use notifications to allow other parts of expo-updates to send UpdateEvents
+    NotificationCenter.default.addObserver(self, selector: #selector(handleSendUpdateEvent(notification:)), name: Notification.Name("EXUpdates_SendUpdateEvent"), object: nil)
+  }
+
+  public func handleSendUpdateEvent(notification: Notification) {
+    guard let body = notification.userInfo?["body"] as? [AnyHashable: Any],
+      let type = notification.userInfo?["type"] as? String else {
+      return
+    }
+    UpdatesUtils.sendEvent(toBridge: bridge, withType: type, body: body)
+  }
+
   // MARK: - AppLoaderTaskDelegate
 
   public func appLoaderTask(_: AppLoaderTask, didLoadCachedUpdate update: Update) -> Bool {
@@ -425,26 +440,10 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     errorRecovery.notify(newRemoteLoadStatus: remoteLoadStatus)
   }
 
-  // MARK: - Notification handler
-  public func handleSendUpdateEvent(notif: Notification) {
-    guard let userInfo = notif.userInfo,
-      let type = userInfo["type"] as? String,
-      let body = userInfo["body"] as? [AnyHashable: Any]
-    else {
-      print("No userInfo found in notification")
-      return
-    }
-    UpdatesUtils.sendEvent(toBridge: bridge, withType: type, body: body)
-  }
-
   // MARK: - Internal
 
   internal func initializeUpdatesDirectory() throws {
     updatesDirectory = try UpdatesUtils.initializeUpdatesDirectory()
-  }
-
-  internal func initializeNotificationHandlers() {
-    NotificationCenter.default.addObserver(self, selector: #selector(handleSendUpdateEvent), name: Notification.Name("Updates.AppController.sendUpdateEvent"), object: nil)
   }
 
   internal func initializeUpdatesDatabase() throws {

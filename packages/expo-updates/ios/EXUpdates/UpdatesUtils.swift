@@ -1,6 +1,7 @@
 //  Copyright © 2019 650 Industries. All rights reserved.
 
 // swiftlint:disable force_unwrapping
+// swiftlint:disable type_body_length
 
 import Foundation
 import SystemConfiguration
@@ -21,6 +22,7 @@ internal extension Array where Element: Equatable {
 public final class UpdatesUtils: NSObject {
   private static let EXUpdatesEventName = "Expo.nativeUpdatesEvent"
   private static let EXUpdatesUtilsErrorDomain = "EXUpdatesUtils"
+  public static let methodQueue = DispatchQueue(label: "expo.modules.EXUpdatesQueue")
 
   internal static func runBlockOnMainThread(_ block: @escaping () -> Void) {
     if Thread.isMainThread {
@@ -111,20 +113,110 @@ public final class UpdatesUtils: NSObject {
       extraHeaders: extraHeaders
     ) { updateResponse in
       guard let update = updateResponse.manifestUpdateResponsePart?.updateManifest else {
+        sendUpdateEventNotification(AppController.NoUpdateAvailableEventName)
         block([:])
         return
       }
 
       let launchedUpdate = updatesService.launchedUpdate
       if selectionPolicy.shouldLoadNewUpdate(update, withLaunchedUpdate: launchedUpdate, filters: updateResponse.responseHeaderData?.manifestFilters) {
-        block([
+        let body = [
           "manifest": update.manifest.rawManifestJSON()
-        ])
+        ]
+        block(body)
+        sendUpdateEventNotification(AppController.UpdateAvailableEventName, body: body)
       } else {
         block([:])
+        sendUpdateEventNotification(AppController.NoUpdateAvailableEventName)
       }
     } errorBlock: { error in
-      block(["message": error.localizedDescription])
+      let body = ["message": error.localizedDescription]
+      block(body)
+      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+    }
+  }
+
+  public static func fetchUpdate(updatesService: (any EXUpdatesModuleInterface)?, _ block: @escaping ([String: Any]) -> Void) {
+    sendUpdateEventNotification(AppController.DownloadStartEventName)
+    guard let updatesService = updatesService,
+      let config = updatesService.config,
+      let selectionPolicy = updatesService.selectionPolicy,
+      config.isEnabled else {
+      let body = ["message": UpdatesDisabledException().localizedDescription]
+      block(body)
+      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      return
+    }
+    guard updatesService.isStarted else {
+      let body = ["message": UpdatesNotInitializedException().localizedDescription]
+      block(body)
+      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      return
+    }
+
+    let remoteAppLoader = RemoteAppLoader(
+      config: config,
+      database: updatesService.database,
+      directory: updatesService.directory,
+      launchedUpdate: updatesService.launchedUpdate,
+      completionQueue: methodQueue
+    )
+    remoteAppLoader.loadUpdate(
+      // swiftlint:disable:next force_unwrapping
+      fromURL: config.updateUrl!
+    ) { updateResponse in
+      if let updateDirective = updateResponse.directiveUpdateResponsePart?.updateDirective {
+        switch updateDirective {
+        case is NoUpdateAvailableUpdateDirective:
+          return false
+        case is RollBackToEmbeddedUpdateDirective:
+          return true
+        default:
+          NSException(name: .internalInconsistencyException, reason: "Unhandled update directive type").raise()
+          return false
+        }
+      }
+
+      guard let update = updateResponse.manifestUpdateResponsePart?.updateManifest else {
+        return false
+      }
+
+      return selectionPolicy.shouldLoadNewUpdate(
+        update,
+        withLaunchedUpdate: updatesService.launchedUpdate,
+        filters: updateResponse.responseHeaderData?.manifestFilters
+      )
+    } asset: { _, _, _, _ in
+      // do nothing for now
+    } success: { updateResponse in
+      sendUpdateEventNotification(AppController.DownloadCompleteEventName)
+      if updateResponse?.directiveUpdateResponsePart?.updateDirective is RollBackToEmbeddedUpdateDirective {
+        block([
+          "isNew": false,
+          "isRollBackToEmbedded": true
+        ])
+        return
+      } else {
+        if let update = updateResponse?.manifestUpdateResponsePart?.updateManifest {
+          updatesService.resetSelectionPolicy()
+          block([
+            "isNew": true,
+            "isRollBackToEmbedded": false,
+            "manifest": update.manifest.rawManifestJSON()
+          ])
+          return
+        } else {
+          block([
+            "isNew": false,
+            "isRollBackToEmbedded": false
+          ])
+          return
+        }
+      }
+    } error: { error in
+      let body = ["message": "Failed to download new update: \(error.localizedDescription)"]
+      block(body)
+      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
     }
   }
 
@@ -159,6 +251,14 @@ public final class UpdatesUtils: NSObject {
       // check will happen later on if there's an error
       return false
     }
+  }
+
+  internal static func sendUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
+    NotificationCenter.default.post(
+      name: Notification.Name("EXUpdates_SendUpdateEvent"),
+      object: nil,
+      userInfo: ["type": type, "body": body]
+    )
   }
 
   internal static func getRuntimeVersion(withConfig config: UpdatesConfig) -> String {
