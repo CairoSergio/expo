@@ -16,7 +16,15 @@ export declare enum UpdateEventType {
     /**
      * An error occurred trying to fetch the latest update.
      */
-    ERROR = "error"
+    ERROR = "error",
+    /**
+     * A call to `downloadUpdate()` has started.
+     */
+    DOWNLOAD_START = "downloadStart",
+    /**
+     * A call to `downloadUpdate()` has completed successfully.
+     */
+    DOWNLOAD_COMPLETE = "downloadComplete"
 }
 /**
  * @hidden
@@ -91,6 +99,10 @@ export type UpdateFetchResultSuccess = {
      * The manifest of the newly downloaded update.
      */
     manifest: Manifest;
+    /**
+     * Signifies that this result is not a roll back to the embedded update.
+     */
+    isRollBackToEmbedded: false;
 };
 /**
  * The failed result of fetching a new update.
@@ -104,11 +116,23 @@ export type UpdateFetchResultFailure = {
      * No manifest, since there is no update.
      */
     manifest: undefined;
+    /**
+     * Signifies that this result is not a roll back to the embedded update.
+     */
+    isRollBackToEmbedded: false;
 };
 /**
  * The rollback to embedded result of fetching a new update.
  */
 type UpdateFetchResultRollbackToEmbedded = {
+    /**
+     * Signifies that this is a roll back and not a new update.
+     */
+    isNew: false;
+    /**
+     * No manifest, since this is a roll back.
+     */
+    manifest: undefined;
     /**
      * Signifies that the update was a roll back to the embedded update.
      */

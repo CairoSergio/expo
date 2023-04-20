@@ -17,6 +17,14 @@ export var UpdateEventType;
      * An error occurred trying to fetch the latest update.
      */
     UpdateEventType["ERROR"] = "error";
+    /**
+     * A call to `downloadUpdate()` has started.
+     */
+    UpdateEventType["DOWNLOAD_START"] = "downloadStart";
+    /**
+     * A call to `downloadUpdate()` has completed successfully.
+     */
+    UpdateEventType["DOWNLOAD_COMPLETE"] = "downloadComplete";
 })(UpdateEventType || (UpdateEventType = {}));
 /**
  * The possible code values for expo-updates log entries
