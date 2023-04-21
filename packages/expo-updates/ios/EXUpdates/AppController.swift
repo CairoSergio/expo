@@ -42,6 +42,9 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
   public static let ErrorEventName = "error"
   public static let DownloadStartEventName = "downloadStart"
   public static let DownloadCompleteEventName = "downloadComplete"
+  public static let DownloadAssetEventName = "downloadAsset"
+
+  public static let UpdateEventNotificationName = "EXUpdates_UpdateEventNotification"
 
   /**
    Delegate which will be notified when EXUpdates has an update ready to launch and
@@ -240,7 +243,7 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     isStarted = true
 
     purgeUpdatesLogsOlderThanOneDay()
-    initializeNotificationHandlers()
+    initializeUpdateEventNotificationHandler()
 
     do {
       try initializeUpdatesDirectory()
@@ -333,12 +336,12 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
 
   // MARK: - Notifications for UpdateEvents
 
-  private func initializeNotificationHandlers() {
+  private func initializeUpdateEventNotificationHandler() {
     // Use notifications to allow other parts of expo-updates to send UpdateEvents
-    NotificationCenter.default.addObserver(self, selector: #selector(handleSendUpdateEvent(notification:)), name: Notification.Name("EXUpdates_SendUpdateEvent"), object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(handleUpdateEventNotification(notification:)), name: Notification.Name(AppController.UpdateEventNotificationName), object: nil)
   }
 
-  public func handleSendUpdateEvent(notification: Notification) {
+  public func handleUpdateEventNotification(notification: Notification) {
     guard let body = notification.userInfo?["body"] as? [AnyHashable: Any],
       let type = notification.userInfo?["type"] as? String else {
       return
@@ -346,9 +349,9 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     UpdatesUtils.sendEvent(toBridge: bridge, withType: type, body: body)
   }
 
-  public func sendUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
+  public func postUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
     NotificationCenter.default.post(
-      name: Notification.Name("EXUpdates_SendUpdateEvent"),
+      name: Notification.Name(AppController.UpdateEventNotificationName),
       object: nil,
       userInfo: ["type": type, "body": body]
     )

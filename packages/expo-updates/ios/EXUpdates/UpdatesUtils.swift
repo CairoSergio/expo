@@ -2,6 +2,7 @@
 
 // swiftlint:disable force_unwrapping
 // swiftlint:disable type_body_length
+// swiftlint:disable function_body_length
 
 import Foundation
 import SystemConfiguration
@@ -113,7 +114,7 @@ public final class UpdatesUtils: NSObject {
       extraHeaders: extraHeaders
     ) { updateResponse in
       guard let update = updateResponse.manifestUpdateResponsePart?.updateManifest else {
-        sendUpdateEventNotification(AppController.NoUpdateAvailableEventName)
+        postUpdateEventNotification(AppController.NoUpdateAvailableEventName)
         block([:])
         return
       }
@@ -124,33 +125,33 @@ public final class UpdatesUtils: NSObject {
           "manifest": update.manifest.rawManifestJSON()
         ]
         block(body)
-        sendUpdateEventNotification(AppController.UpdateAvailableEventName, body: body)
+        postUpdateEventNotification(AppController.UpdateAvailableEventName, body: body)
       } else {
         block([:])
-        sendUpdateEventNotification(AppController.NoUpdateAvailableEventName)
+        postUpdateEventNotification(AppController.NoUpdateAvailableEventName)
       }
     } errorBlock: { error in
       let body = ["message": error.localizedDescription]
       block(body)
-      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      postUpdateEventNotification(AppController.ErrorEventName, body: body)
     }
   }
 
   public static func fetchUpdate(updatesService: (any EXUpdatesModuleInterface)?, _ block: @escaping ([String: Any]) -> Void) {
-    sendUpdateEventNotification(AppController.DownloadStartEventName)
+    postUpdateEventNotification(AppController.DownloadStartEventName)
     guard let updatesService = updatesService,
       let config = updatesService.config,
       let selectionPolicy = updatesService.selectionPolicy,
       config.isEnabled else {
       let body = ["message": UpdatesDisabledException().localizedDescription]
       block(body)
-      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      postUpdateEventNotification(AppController.ErrorEventName, body: body)
       return
     }
     guard updatesService.isStarted else {
       let body = ["message": UpdatesNotInitializedException().localizedDescription]
       block(body)
-      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      postUpdateEventNotification(AppController.ErrorEventName, body: body)
       return
     }
 
@@ -186,37 +187,47 @@ public final class UpdatesUtils: NSObject {
         withLaunchedUpdate: updatesService.launchedUpdate,
         filters: updateResponse.responseHeaderData?.manifestFilters
       )
-    } asset: { _, _, _, _ in
-      // do nothing for now
+    } asset: { asset, successfulAssetCount, failedAssetCount, totalAssetCount in
+      postUpdateEventNotification(AppController.DownloadAssetEventName, body: [
+        "asset": asset.filename,
+        "successfulAssetCount": successfulAssetCount,
+        "failedAssetCount": failedAssetCount,
+        "totalAssetCount": totalAssetCount
+      ])
     } success: { updateResponse in
-      sendUpdateEventNotification(AppController.DownloadCompleteEventName)
       if updateResponse?.directiveUpdateResponsePart?.updateDirective is RollBackToEmbeddedUpdateDirective {
-        block([
+        let body = [
           "isNew": false,
           "isRollBackToEmbedded": true
-        ])
+        ]
+        block(body)
+        postUpdateEventNotification(AppController.DownloadCompleteEventName, body: body)
         return
       } else {
         if let update = updateResponse?.manifestUpdateResponsePart?.updateManifest {
           updatesService.resetSelectionPolicy()
-          block([
+          let body = [
             "isNew": true,
             "isRollBackToEmbedded": false,
             "manifest": update.manifest.rawManifestJSON()
-          ])
+          ]
+          block(body)
+          postUpdateEventNotification(AppController.DownloadCompleteEventName, body: body)
           return
         } else {
-          block([
+          let body = [
             "isNew": false,
             "isRollBackToEmbedded": false
-          ])
+          ]
+          block(body)
+          postUpdateEventNotification(AppController.DownloadCompleteEventName, body: body)
           return
         }
       }
     } error: { error in
       let body = ["message": "Failed to download new update: \(error.localizedDescription)"]
       block(body)
-      sendUpdateEventNotification(AppController.ErrorEventName, body: body)
+      postUpdateEventNotification(AppController.ErrorEventName, body: body)
     }
   }
 
@@ -253,8 +264,8 @@ public final class UpdatesUtils: NSObject {
     }
   }
 
-  internal static func sendUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
-    AppController.sharedInstance.sendUpdateEventNotification(type, body: body)
+  internal static func postUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
+    AppController.sharedInstance.postUpdateEventNotification(type, body: body)
   }
 
   internal static func getRuntimeVersion(withConfig config: UpdatesConfig) -> String {
