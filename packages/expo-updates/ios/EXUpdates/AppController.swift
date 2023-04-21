@@ -331,6 +331,8 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
     return launcher?.launchedUpdate
   }
 
+  // MARK: - Notifications for UpdateEvents
+
   private func initializeNotificationHandlers() {
     // Use notifications to allow other parts of expo-updates to send UpdateEvents
     NotificationCenter.default.addObserver(self, selector: #selector(handleSendUpdateEvent(notification:)), name: Notification.Name("EXUpdates_SendUpdateEvent"), object: nil)
@@ -342,6 +344,14 @@ public class AppController: NSObject, AppLoaderTaskDelegate, ErrorRecoveryDelega
       return
     }
     UpdatesUtils.sendEvent(toBridge: bridge, withType: type, body: body)
+  }
+
+  public func sendUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
+    NotificationCenter.default.post(
+      name: Notification.Name("EXUpdates_SendUpdateEvent"),
+      object: nil,
+      userInfo: ["type": type, "body": body]
+    )
   }
 
   // MARK: - AppLoaderTaskDelegate

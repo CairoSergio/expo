@@ -254,11 +254,7 @@ public final class UpdatesUtils: NSObject {
   }
 
   internal static func sendUpdateEventNotification(_ type: String, body: [AnyHashable: Any] = [:]) {
-    NotificationCenter.default.post(
-      name: Notification.Name("EXUpdates_SendUpdateEvent"),
-      object: nil,
-      userInfo: ["type": type, "body": body]
-    )
+    AppController.sharedInstance.sendUpdateEventNotification(type, body: body)
   }
 
   internal static func getRuntimeVersion(withConfig config: UpdatesConfig) -> String {
