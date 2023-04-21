@@ -189,10 +189,12 @@ public final class UpdatesUtils: NSObject {
       )
     } asset: { asset, successfulAssetCount, failedAssetCount, totalAssetCount in
       postUpdateEventNotification(AppController.DownloadAssetEventName, body: [
-        "asset": asset.filename,
-        "successfulAssetCount": successfulAssetCount,
-        "failedAssetCount": failedAssetCount,
-        "totalAssetCount": totalAssetCount
+        "assetInfo: [
+          "assetName": asset.filename,
+          "successfulAssetCount": successfulAssetCount,
+          "failedAssetCount": failedAssetCount,
+          "totalAssetCount": totalAssetCount
+        ]
       ])
     } success: { updateResponse in
       if updateResponse?.directiveUpdateResponsePart?.updateDirective is RollBackToEmbeddedUpdateDirective {
