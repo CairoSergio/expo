@@ -25,6 +25,10 @@ export var UpdateEventType;
      * A call to `downloadUpdate()` has completed successfully.
      */
     UpdateEventType["DOWNLOAD_COMPLETE"] = "downloadComplete";
+    /**
+     * An asset has been downloaded.
+     */
+    UpdateEventType["DOWNLOAD_ASSET"] = "downloadAsset";
 })(UpdateEventType || (UpdateEventType = {}));
 /**
  * The possible code values for expo-updates log entries

@@ -26,6 +26,10 @@ export enum UpdateEventType {
    * A call to `downloadUpdate()` has completed successfully.
    */
   DOWNLOAD_COMPLETE = 'downloadComplete',
+  /**
+   * An asset has been downloaded.
+   */
+  DOWNLOAD_ASSET = 'downloadAsset',
 }
 
 // @docsMissing
@@ -182,6 +186,10 @@ export type UpdateEvent = {
    * If `type` is `Updates.UpdateEventType.ERROR`, the error message, and `undefined` otherwise.
    */
   message?: string;
+  /**
+   * If `type` is `Updates.UpdateEventType.DOWNLOAD_ASSET`, information on the asset that was downloaded, and `undefined` otherwise.
+   */
+  assetInfo?: { [key: string]: any };
 };
 
 /**
