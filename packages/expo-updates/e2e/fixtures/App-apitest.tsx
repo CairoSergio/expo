@@ -57,8 +57,12 @@ export default function App() {
   const downloadAndRunUpdate = async () => {
     setUpdateMessage('Downloading the new update...');
     await Updates.fetchUpdateAsync();
-    setUpdateMessage('Downloaded update... launching it in 2 seconds.');
-    await delay(2000);
+    let countdown = 10;
+    while (countdown > 0) {
+      setUpdateMessage(`Downloaded update... launching it in ${countdown} seconds.`);
+      countdown = countdown - 1;
+      await delay(1000);
+    }
     await Updates.reloadAsync();
   };
 
@@ -99,10 +103,14 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
+      <Text style={styles.titleText}>Updates JS API test</Text>
+      <Text>   </Text>
       <Text>{runTypeMessage}</Text>
       <Text>{checkAutomaticallyMessage}</Text>
+      <Text>   </Text>
+      <Text style={styles.titleText}>Status</Text>
       <Text style={styles.updateMessageText}>{updateMessage}</Text>
+      <Text style={styles.titleText}>Last 5 UpdateEvents received</Text>
       <Text style={styles.updateMessageText}>{updateEvents.join('\n')}</Text>
       <Pressable style={styles.button} onPress={handleCheckButtonPress}>
         <Text style={styles.buttonText}>Check manually for updates</Text>
@@ -146,6 +154,9 @@ const styles = StyleSheet.create({
     borderColor: '#4630EB',
     borderWidth: 1,
     borderRadius: 4,
+  },
+  titleText: {
+    fontWeight: 'bold',
   },
 });
 
